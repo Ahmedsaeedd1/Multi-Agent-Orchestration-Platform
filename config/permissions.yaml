@@ -16,3 +16,7 @@ sql_assistant:
   - sql_read
   - memory_read
   - memory_write
+
+fact_checker:
+  - web_access
+  - memory_read

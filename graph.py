@@ -19,6 +19,7 @@ from agents.sql_assistant import sql_assistant_node
 from agents.reviewer import reviewer_node
 from agents.aggregator import aggregator_node
 from agents.code_evaluator import code_evaluator_node
+from agents.fact_checker import fact_checker_node
 
 load_dotenv()
 
@@ -39,6 +40,7 @@ NODE_TIMEOUTS: dict[str, int] = {
     "data_analyst": int(os.getenv("DATA_ANALYST_TIMEOUT", str(_DEFAULT_NODE_TIMEOUT))),
     "sql_assistant": int(os.getenv("SQL_ASSISTANT_TIMEOUT", str(_DEFAULT_NODE_TIMEOUT))),
     "code_evaluator": int(os.getenv("CODE_EVALUATOR_TIMEOUT", str(_DEFAULT_NODE_TIMEOUT))),
+    "fact_checker": int(os.getenv("FACT_CHECKER_TIMEOUT", str(_DEFAULT_NODE_TIMEOUT))),
     # reviewer and aggregator need generous limits: max_repairs=3 plus
     # Groq rate-limit back-offs can each take ~30 s, so 30 s total is
     # virtually guaranteed to expire before the LLM finishes.
@@ -69,6 +71,7 @@ class AgentState(TypedDict):
     research_output: dict | None       # {"findings": [...]}
     code_output: dict | None           # {"code": "..."}
     code_eval_output: dict | None      # new field
+    fact_check_output: dict | None     # new field
     analysis_output: dict | None       # {"summary": "..."}
     sql_output: dict | None            # new field
     review: dict | None                # {"verdict": ..., "feedback": ...}
@@ -163,6 +166,8 @@ def _build_old_state(state: AgentState) -> dict:
     if state.get("code_eval_output"):
         # pass eval output so reviewer can see it
         old["code_eval_output"] = state["code_eval_output"]
+    if state.get("fact_check_output"):
+        old["fact_check_output"] = state["fact_check_output"]
     if state.get("analysis_output") and "summary" in (state["analysis_output"] or {}):
         old["analysis"] = state["analysis_output"]["summary"]
     return old
@@ -291,6 +296,21 @@ def code_evaluator_wrapper(state: AgentState) -> dict:
 
     code_eval_output = result.pop("code_eval_output", None)
     result["code_eval_output"] = code_eval_output
+    return result
+
+
+def fact_checker_wrapper(state: AgentState) -> dict:
+    step_entry = _make_step_entry("fact_checker")
+    
+    result = _run_with_timeout(fact_checker_node, state, "fact_checker")
+    result["step_log"] = [step_entry]
+
+    if "error" in result:
+        result["fact_check_output"] = None
+        return result
+
+    fact_check_output = result.pop("fact_check_output", None)
+    result["fact_check_output"] = fact_check_output
     return result
 
 
@@ -449,6 +469,7 @@ def build_graph() -> StateGraph:
     builder.add_node("orchestrator", orchestrator_wrapper)
     builder.add_node("planner", planner_wrapper)
     builder.add_node("researcher", researcher_wrapper)
+    builder.add_node("fact_checker", fact_checker_wrapper)
     builder.add_node("coder", coder_wrapper)
     builder.add_node("code_evaluator", code_evaluator_wrapper)
     builder.add_node("data_analyst", data_analyst_wrapper)
@@ -472,8 +493,11 @@ def build_graph() -> StateGraph:
         route_orchestrator_to_specialists,
     )
 
-    for specialist in ("researcher", "data_analyst"):
+    for specialist in ("data_analyst",):
         builder.add_conditional_edges(specialist, route_specialist)
+
+    builder.add_edge("researcher", "fact_checker")
+    builder.add_conditional_edges("fact_checker", route_specialist)
         
     builder.add_edge("coder", "code_evaluator")
     builder.add_conditional_edges("code_evaluator", route_specialist)

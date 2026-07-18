@@ -25,6 +25,15 @@ researcher:
   temperature: 0.4
   tools: [web_search, web_fetch, memory_write]
 
+fact_checker:
+  primary:   { provider: huggingface, model: deepseek-ai/DeepSeek-R1:novita }
+  fallback:
+    - { provider: groq, model: llama-3.3-70b-versatile }
+    - { provider: zai,  model: glm-4.7-flash }
+  temperature: 0.1
+  max_tokens: 3072
+  tools: [web_search, memory_read]
+
 coder:
   primary:   { provider: huggingface,  model: Qwen/Qwen3-8B:featherless-ai }
   fallback:

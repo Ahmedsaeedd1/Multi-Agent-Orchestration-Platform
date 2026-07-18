@@ -28,6 +28,7 @@ def reviewer_node(state: AgentState) -> dict:
     research_notes = state.get("research_notes", [])
     code = state.get("code", "")
     analysis = state.get("analysis", "")
+    fact_check_output = state.get("fact_check_output")
     review_cycles = state.get("review_cycles", 0)
 
     # Coder's forced self-verification result (see agents/coder.py).
@@ -44,12 +45,21 @@ def reviewer_node(state: AgentState) -> dict:
             f"Execution output:\n{code_exec_output}"
         )
 
+    fact_check_block = ""
+    if fact_check_output:
+        fact_check_block = (
+            f"\n\nFact-Check Report:\n"
+            f"Summary: {fact_check_output.get('confidence_summary', '')}\n"
+            f"Contradictions Found: {fact_check_output.get('contradictions', [])}\n"
+        )
+
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {
             "role": "user",
             "content": (
-                f"Research: {chr(10).join(research_notes)}\n\n"
+                f"Research: {chr(10).join(research_notes)}\n"
+                f"{fact_check_block}\n"
                 f"Code:\n{code}"
                 f"{code_verification_block}\n\n"
                 f"Analysis:\n{analysis}"
