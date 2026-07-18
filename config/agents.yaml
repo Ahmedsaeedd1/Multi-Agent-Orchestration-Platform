@@ -1,0 +1,70 @@
+# config/agents.yaml
+# Models: only Phase 0 confirmed working models.
+# Providers confirmed OK: groq, openrouter/gemma-4-26b, zai, huggingface/featherless-ai, huggingface/novita
+# Providers confirmed DEAD: deepseek (402), openrouter/qwen3-coder (429), openrouter/gpt-oss-120b (404)
+
+orchestrator:
+  primary:   { provider: groq,         model: llama-3.3-70b-versatile }
+  fallback:
+    - { provider: openrouter,  model: google/gemma-4-26b-a4b-it:free }
+    - { provider: zai,         model: glm-4.7-flash }
+  temperature: 0.2
+
+planner:
+  primary:   { provider: huggingface,  model: deepseek-ai/DeepSeek-R1:novita }
+  fallback:
+    - { provider: groq,        model: llama-3.3-70b-versatile }
+    - { provider: zai,         model: glm-4.7-flash }
+  temperature: 0.3
+
+researcher:
+  primary:   { provider: groq,         model: llama-3.1-8b-instant }
+  fallback:
+    - { provider: openrouter,  model: google/gemma-4-26b-a4b-it:free }
+    - { provider: zai,         model: glm-4.7-flash }
+  temperature: 0.4
+  tools: [web_search, web_fetch, memory_write]
+
+coder:
+  primary:   { provider: huggingface,  model: Qwen/Qwen3-8B:featherless-ai }
+  fallback:
+    - { provider: groq,        model: llama-3.3-70b-versatile }
+    - { provider: zai,         model: glm-4.7-flash }
+  temperature: 0.1
+  max_tokens: 4096
+  tools: [run_python, read_file, write_file, memory_write]
+
+data_analyst:
+  primary:   { provider: huggingface,  model: deepseek-ai/DeepSeek-R1:novita }
+  fallback:
+    - { provider: groq,        model: llama-3.1-8b-instant }
+    - { provider: zai,         model: glm-4.7-flash }
+  temperature: 0.2
+  tools: [run_python, read_file, memory_write]
+
+reviewer:
+  primary:   { provider: groq,         model: llama-3.3-70b-versatile }
+  fallback:
+    - { provider: openrouter,  model: google/gemma-4-26b-a4b-it:free }
+    - { provider: zai,         model: glm-4.7-flash }
+  temperature: 0.0
+  tools: [memory_read]
+
+aggregator:
+  primary:   { provider: groq,         model: llama-3.1-8b-instant }
+  fallback:
+    - { provider: groq,        model: llama-3.3-70b-versatile }
+    - { provider: openrouter,  model: google/gemma-4-26b-a4b-it:free }
+    - { provider: zai,         model: glm-4.7-flash }
+  temperature: 0.3
+  max_tokens: 4096
+  tools: [memory_read]
+
+sql_assistant:
+  primary:   { provider: huggingface, model: deepseek-ai/DeepSeek-R1:novita }
+  fallback:
+    - { provider: groq, model: llama-3.3-70b-versatile }
+    - { provider: zai,  model: glm-4.7-flash }
+  temperature: 0.1
+  max_tokens: 2048
+  tools: [get_schema, execute_sql, memory_read, memory_write]

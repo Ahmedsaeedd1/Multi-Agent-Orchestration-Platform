@@ -1,0 +1,13 @@
+# config/permissions.yaml
+
+orchestrator:      []                              # plans only — no tool access
+planner:            []                              # reasons only
+researcher:         [web_access, memory_read, memory_write]
+coder:              [code_execution, file_read, file_write, memory_write]
+data_analyst:       [code_execution, file_read, memory_write]
+reviewer:           [memory_read]                   # read-only — never mutates
+aggregator: [memory_read]
+sql_assistant:
+  - sql_read
+  - memory_read
+  - memory_write
