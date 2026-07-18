@@ -22,6 +22,11 @@ class StructuredCallError(Exception):
 
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*([\s\S]*?)```\s*$", re.IGNORECASE)
+_THINK_RE = re.compile(r"<think>.*?</think>\s*", re.IGNORECASE | re.DOTALL)
+
+def _strip_think_blocks(text: str) -> str:
+    """Remove <think>...</think> reasoning blocks from model output."""
+    return _THINK_RE.sub("", text)
 
 
 def _strip_fences(text: str) -> str:
@@ -118,8 +123,11 @@ def call_agent_structured(
         # unwrapping a str, causing "'str' object has no attribute 'choices'").
         last_response = router.call(agent_name, messages) or ""
 
+        # Strip <think> blocks from model output (DeepSeek-R1/Qwen3 emit these)
+        clean = _strip_think_blocks(last_response)
+
         # Strip markdown code fences that many LLMs wrap around their JSON.
-        clean = _strip_fences(last_response)
+        clean = _strip_fences(clean)
 
         # Recover truncated JSON — some free-tier providers cut responses
         # mid-string when they hit their output token cap.  Try to close

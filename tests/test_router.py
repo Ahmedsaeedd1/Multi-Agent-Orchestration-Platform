@@ -19,7 +19,8 @@ from router import ModelRouter, RateLimitOrProviderError, strip_thinking
 @pytest.fixture(autouse=True)
 def disable_cache(monkeypatch):
     """Ensure the router does not hit the semantic cache during these unit tests."""
-    monkeypatch.setenv("CACHE_ENABLED", "false")
+    import router as rtr
+    monkeypatch.setattr(rtr._cache, "enabled", False)
 
 @pytest.fixture
 def mock_clients():

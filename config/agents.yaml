@@ -34,6 +34,15 @@ coder:
   max_tokens: 4096
   tools: [run_python, read_file, write_file, memory_write]
 
+code_evaluator:
+  primary:   { provider: huggingface,  model: Qwen/Qwen3-8B:featherless-ai }
+  fallback:
+    - { provider: groq,        model: llama-3.3-70b-versatile }
+    - { provider: zai,         model: glm-4.7-flash }
+  temperature: 0.1
+  max_tokens: 2048
+  tools: [run_static_analysis, run_sandboxed_with_edge_cases, memory_read]
+
 data_analyst:
   primary:   { provider: huggingface,  model: deepseek-ai/DeepSeek-R1:novita }
   fallback:

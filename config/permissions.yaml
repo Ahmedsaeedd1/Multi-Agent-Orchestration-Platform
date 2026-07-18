@@ -4,6 +4,11 @@ orchestrator:      []                              # plans only — no tool acce
 planner:            []                              # reasons only
 researcher:         [web_access, memory_read, memory_write]
 coder:              [code_execution, file_read, file_write, memory_write]
+
+code_evaluator:
+  - code_execution
+  - memory_read
+
 data_analyst:       [code_execution, file_read, memory_write]
 reviewer:           [memory_read]                   # read-only — never mutates
 aggregator: [memory_read]

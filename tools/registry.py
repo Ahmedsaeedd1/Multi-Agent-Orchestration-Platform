@@ -96,6 +96,7 @@ def build_registry() -> "ToolRegistry":
     from tools.code_exec import run_python
     from tools.files import read_file, write_file
     from tools.sql import execute_sql, get_schema
+    from tools.code_eval import run_static_analysis, run_sandboxed_with_edge_cases
 
     r = ToolRegistry()
 
@@ -174,6 +175,34 @@ def build_registry() -> "ToolRegistry":
         parameters={
             "table_name": {"type": "string", "description": "Specific table name (optional)"},
             "db_path": {"type": "string", "description": "Path to SQLite database (optional)"}
+        },
+    ))
+    r.register(ToolSpec(
+        name="run_static_analysis",
+        description=run_static_analysis.__doc__ or "Run static analysis on code.",
+        fn=run_static_analysis,
+        required_permission="code_execution",
+        parameters={
+            "code": {"type": "string", "description": "Python code to analyze"}
+        },
+    ))
+    r.register(ToolSpec(
+        name="run_sandboxed_with_edge_cases",
+        description=run_sandboxed_with_edge_cases.__doc__ or "Run code in a sandbox with specific edge cases.",
+        fn=run_sandboxed_with_edge_cases,
+        required_permission="code_execution",
+        parameters={
+            "code": {"type": "string", "description": "Python code to execute"},
+            "edge_case_inputs": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "input": {"description": "The input to pass to the code"}
+                    }
+                },
+                "description": "List of edge cases to run"
+            }
         },
     ))
 
