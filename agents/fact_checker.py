@@ -114,18 +114,27 @@ def fact_checker_node(state: dict) -> dict:
     eval_prompt = (
         "Now, look at the web search results for each claim you extracted.\n\n"
         f"Search Results:\n{''.join(search_results_context)}\n"
-        "Classify each claim's status as exactly 'confirmed', 'contradicted', or 'unverifiable' based strictly on these search results. "
-        "Populate the 'contradictions' list with the text of any claims classified as 'contradicted'. "
-        "Finally, write a 'confidence_summary' in plain English summarizing your findings.\n"
-        "Output valid JSON matching the FactCheckOutput schema."
+        "You must format your response EXACTLY matching the FactCheckOutput schema. For example:\n"
+        "```json\n"
+        "{\n"
+        '  "claims_checked": [\n'
+        '    {"claim": "The population is 8 billion.", "status": "confirmed", "evidence": "Source X says 8 billion."}\n'
+        "  ],\n"
+        '  "contradictions": [],\n'
+        '  "confidence_summary": "All claims were verified."\n'
+        "}\n"
+        "```\n"
     )
-    messages.append({"role": "user", "content": eval_prompt})
+    eval_messages = [
+        {"role": "system", "content": "You are a rigorous Fact-Checker."},
+        {"role": "user", "content": eval_prompt}
+    ]
 
     try:
         fact_check_output: FactCheckOutput = call_agent_structured(
             router=router,
             agent_name="fact_checker",
-            messages=messages,
+            messages=eval_messages,
             schema=FactCheckOutput
         )
         return {"fact_check_output": fact_check_output.model_dump()}

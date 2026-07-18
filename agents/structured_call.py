@@ -58,14 +58,8 @@ def _format_validation_errors(err: ValidationError) -> str:
 
 def _recover_truncated_json(text: str) -> str:
     """
-    Attempt to close truncated JSON from providers that hit output token limits.
-
-    Walks the string tracking open braces/brackets and whether we are inside
-    a JSON string.  If the text ends mid-string or with unclosed objects, the
-    minimal closing characters (``"`` and/or ``}`` / ``]``) are appended so
-    that a subsequent JSON parse can succeed.
-
-    Returns the original text unchanged when no truncation is detected.
+    Attempt to close truncated JSON from providers that hit output token limits,
+    and escape literal newlines inside JSON strings so that they parse correctly.
     """
     if not text.strip().startswith("{"):
         return text
@@ -73,17 +67,30 @@ def _recover_truncated_json(text: str) -> str:
     in_string = False
     escape_next = False
     stack: list[str] = []  # tracks '{' and '[' nesting
+    fixed_chars = []
 
     for ch in text:
         if escape_next:
             escape_next = False
+            fixed_chars.append(ch)
             continue
         if ch == "\\":
             escape_next = True
+            fixed_chars.append(ch)
             continue
         if ch == '"':
             in_string = not in_string
+            fixed_chars.append(ch)
             continue
+            
+        if in_string and ch == '\n':
+            # Escape literal newlines inside JSON strings
+            fixed_chars.append('\\')
+            fixed_chars.append('n')
+            continue
+
+        fixed_chars.append(ch)
+
         if not in_string:
             if ch in ("{", "["):
                 stack.append(ch)
@@ -94,6 +101,8 @@ def _recover_truncated_json(text: str) -> str:
                 if stack and stack[-1] == "[":
                     stack.pop()
 
+    fixed_text = "".join(fixed_chars)
+
     suffix = ""
     if in_string:
         suffix += '"'  # close the unterminated string value
@@ -102,8 +111,8 @@ def _recover_truncated_json(text: str) -> str:
         suffix += "}" if opener == "{" else "]"
 
     if suffix:
-        return text + suffix
-    return text
+        return fixed_text + suffix
+    return fixed_text
 
 
 def call_agent_structured(
@@ -113,6 +122,25 @@ def call_agent_structured(
     schema: Type[BaseModel],
     max_repairs: int = 3,
 ) -> BaseModel:
+    import json
+    
+    # Inject schema into the messages automatically to ensure the LLM knows the expected output format
+    local_messages = list(messages)
+    schema_instr = (
+        "You must respond ONLY with valid JSON that matches the following JSON Schema:\n"
+        f"```json\n{json.dumps(schema.model_json_schema(), indent=2)}\n```\n"
+        "Do not include any explanation or conversational text outside the JSON."
+    )
+    
+    if local_messages and local_messages[-1]["role"] == "user":
+        # Append to the last user message
+        local_messages[-1] = {
+            "role": "user",
+            "content": local_messages[-1]["content"] + "\n\n" + schema_instr
+        }
+    else:
+        local_messages.append({"role": "user", "content": schema_instr})
+
     last_error = None
     last_response = ""
 
@@ -121,7 +149,7 @@ def call_agent_structured(
         # NOT a raw OpenAI completion object. Do not re-access
         # .choices[0].message.content here; that was the bug (double
         # unwrapping a str, causing "'str' object has no attribute 'choices'").
-        last_response = router.call(agent_name, messages) or ""
+        last_response = router.call(agent_name, local_messages) or ""
 
         # Strip <think> blocks from model output (DeepSeek-R1/Qwen3 emit these)
         clean = _strip_think_blocks(last_response)
@@ -150,7 +178,8 @@ def call_agent_structured(
                     "Fix ONLY the following fields and return valid JSON "
                     f"matching the expected schema.\n\n{error_detail}"
                 )
-                messages.append({"role": "user", "content": repair_msg})
+                local_messages.append({"role": "assistant", "content": last_response})
+                local_messages.append({"role": "user", "content": repair_msg})
 
     raise StructuredCallError(
         agent_name=agent_name,

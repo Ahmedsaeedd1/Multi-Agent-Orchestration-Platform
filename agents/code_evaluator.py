@@ -59,14 +59,16 @@ def code_evaluator_node(state: AgentState) -> dict:
         "Return valid JSON matching the EdgeCaseSet schema."
     )
 
+    eval_messages = [
+        {"role": "system", "content": "You are an expert QA engineer. Generate edge cases to test the provided code. Output JSON only."},
+        {"role": "user", "content": edge_case_prompt}
+    ]
+
     try:
         edge_case_set: EdgeCaseSet = call_agent_structured(
             router=router,
             agent_name="code_evaluator",
-            messages=[
-                {"role": "system", "content": "You are an expert QA engineer. Generate edge cases to test the provided code. Output JSON only."},
-                {"role": "user", "content": edge_case_prompt}
-            ],
+            messages=eval_messages,
             schema=EdgeCaseSet,
             max_repairs=2
         )
@@ -77,7 +79,7 @@ def code_evaluator_node(state: AgentState) -> dict:
         # Fallback empty case to ensure we still run at least one basic test if generation fails completely
         edge_cases = EdgeCaseSet(edge_cases=[])
         
-    messages.append({"role": "assistant", "content": edge_cases.model_dump_json(indent=2)})
+    eval_messages.append({"role": "assistant", "content": edge_cases.model_dump_json(indent=2)})
 
     # 3. Run sandboxed execution with edge cases
     logger.info("Running sandboxed edge case tests...")

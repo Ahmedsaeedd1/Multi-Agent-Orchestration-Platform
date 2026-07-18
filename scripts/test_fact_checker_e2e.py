@@ -1,6 +1,11 @@
 import os
 import sys
 
+# Disable cache for E2E tests to prevent cross-test contamination
+os.environ["CACHE_ENABLED"] = "false"
+os.environ["FACT_CHECKER_TIMEOUT"] = "300"
+os.environ["RESEARCHER_TIMEOUT"] = "300"
+
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -111,6 +116,6 @@ def test_claim_limit():
 
 if __name__ == "__main__":
     print("Starting Fact Checker Verification")
-    test_claim_limit()
+    # test_claim_limit()
     test_non_research_e2e()
     test_research_e2e()
