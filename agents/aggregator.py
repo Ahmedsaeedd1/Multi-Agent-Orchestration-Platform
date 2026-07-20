@@ -72,10 +72,6 @@ def aggregator_node(state: AgentState) -> dict:
     if urls:
         sources_section = "## Sources\n" + "\n".join([f"- {url}" for url in urls])
 
-    # Ensure SQL outputs aren't hidden
-    if not code and state.get("sql_output"):
-        code = f"SQL Result:\n{state['sql_output']}"
-
     code_verified = state.get("code_verified", False)
     if code and code.strip():
         if not code_verified:
@@ -90,6 +86,9 @@ def aggregator_node(state: AgentState) -> dict:
             }
 
     user_content = f"Research findings:\n{chr(10).join(research_notes)}\n"
+
+    if state.get("sql_output"):
+        user_content += f"\n## SQL Database Execution Results\nThe following data was successfully retrieved from the database:\n{state['sql_output']}\n"
 
     if code and code.strip():
         user_content += (
