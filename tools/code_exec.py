@@ -141,15 +141,12 @@ def _build_safe_env() -> dict:
     return safe_env
 
 
-def run_python(code: str) -> str:
+def run_python(code: str) -> dict:
     """
     Execute Python code in a sandboxed subprocess with a 10-second timeout.
     Network-related imports are disabled via an import guard.
 
-    Returns combined stdout+stderr, truncated to 5 000 characters.
-
-    On timeout  → returns ``"TimeoutError: execution exceeded 10s"``
-    On exception → returns ``"ExecutionError: <message>"``
+    Returns a structured dictionary with execution results.
     """
     full_code = _SANDBOX_PREAMBLE + "\n" + code
 
@@ -162,11 +159,17 @@ def run_python(code: str) -> str:
             env=_build_safe_env(),
         )
         output = result.stdout + result.stderr
+        if len(output) > _MAX_OUTPUT_CHARS:
+            output = output[:_MAX_OUTPUT_CHARS] + "\n\n... (truncated)"
+        if not output:
+            output = "(no output)"
+            
+        if result.returncode == 0:
+            return {"success": True, "output": output, "error_type": None}
+        else:
+            return {"success": False, "output": output, "error_type": "ExecutionError"}
+            
     except subprocess.TimeoutExpired:
-        return f"TimeoutError: execution exceeded {_TIMEOUT_SECONDS}s"
+        return {"success": False, "output": f"TimeoutError: execution exceeded {_TIMEOUT_SECONDS}s", "error_type": "TimeoutError"}
     except Exception as e:
-        return f"ExecutionError: {e}"
-
-    if len(output) > _MAX_OUTPUT_CHARS:
-        output = output[:_MAX_OUTPUT_CHARS] + "\n\n... (truncated)"
-    return output if output else "(no output)"
+        return {"success": False, "output": str(e), "error_type": e.__class__.__name__}

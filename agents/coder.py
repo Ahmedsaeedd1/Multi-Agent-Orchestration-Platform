@@ -137,19 +137,18 @@ def _verify_code(code: str) -> tuple[bool, str]:
     Force-execute *code* via run_python exactly once, regardless of
     whether the model chose to test it during the agentic loop.
 
-    Returns (verified, exec_output) where *verified* is False if the
-    execution result contains any of the known failure markers that
-    tools/code_exec.py returns on timeout/exception/syntax error.
-
-    This is deliberately NOT model-judged — it's a plain string check
-    against run_python's own documented failure-output format, so it
-    costs zero extra LLM calls and can't itself hallucinate a result.
+    Returns (verified, exec_output) where *verified* is True if the
+    execution result indicates success without unhandled exceptions.
     """
     if not code or not code.strip():
         return False, "No code produced — nothing to execute."
 
-    exec_output = run_python(code)
-    verified = not any(marker in exec_output for marker in _EXEC_FAILURE_MARKERS)
+    result = run_python(code)
+    verified = result.get("success", False)
+    
+    exec_output = result.get("output", "")
+    if result.get("error_type"):
+        exec_output += f"\nError Type: {result['error_type']}"
 
     if verified:
         logger.info("Coder self-verification PASSED")

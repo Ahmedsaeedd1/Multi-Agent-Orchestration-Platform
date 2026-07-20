@@ -75,7 +75,22 @@ def sql_assistant_node(state: dict) -> dict:
         if keyword in query_upper:
             raise PermissionError("Only read-only SELECT queries are allowed.")
             
-    result = execute_sql(query)
+    try:
+        result = execute_sql(query)
+    except Exception as e:
+        result = {"error": str(e)}
+        
+    # Check for empty or failed result
+    if result.get("error") or result.get("row_count", 0) == 0:
+        logger.info("SQL assistant skipping summarization (empty or failed result).")
+        summary_text = result.get("error") if result.get("error") else "The query returned no rows."
+        return {
+            "sql_output": {
+                "query": query,
+                "result": result,
+                "summary": summary_text
+            }
+        }
     
     # Second model call to summarize the actual results
     summary_prompt = (

@@ -79,6 +79,17 @@ def code_evaluator_node(state: AgentState) -> dict:
         # Fallback empty case to ensure we still run at least one basic test if generation fails completely
         edge_cases = EdgeCaseSet(edge_cases=[])
         
+    if not edge_cases.edge_cases:
+        logger.warning("No edge cases generated, skipping evaluation.")
+        return {
+            "code_eval_output": {
+                "verdict": "fail",
+                "static_issues": static_issues,
+                "edge_case_results": [],
+                "summary": "No edge cases could be generated or executed — evaluation incomplete, not a genuine pass."
+            }
+        }
+        
     eval_messages.append({"role": "assistant", "content": edge_cases.model_dump_json(indent=2)})
 
     # 3. Run sandboxed execution with edge cases
