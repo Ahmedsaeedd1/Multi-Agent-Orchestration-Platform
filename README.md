@@ -1,8 +1,8 @@
 # Multi-Agent Orchestrator
 
-A robust, multi-agent orchestration system powered by LangGraph. This system is designed to autonomously solve complex tasks by breaking them down, planning an execution strategy, and delegating subtasks to specialized agents (Researcher, Coder, Data Analyst). 
+A robust, multi-agent orchestration system powered by LangGraph. This system is designed to autonomously solve complex tasks by breaking them down, planning an execution strategy, and delegating subtasks to highly specialized agents. 
 
-The system operates entirely on a resilient, free-tier LLM API stack featuring Groq, Z.ai, and OpenRouter, with comprehensive fallback mechanisms to survive strict rate limits. It utilizes Docker for required infrastructure services like Redis (caching) and Qdrant (semantic memory).
+The system operates entirely on a resilient, free-tier LLM API stack featuring Groq, Z.ai, OpenRouter, and HuggingFace, with comprehensive fallback chains and configurable cooldowns to survive strict rate limits. It utilizes Docker for required infrastructure services like Redis (caching) and Qdrant (semantic memory).
 
 ---
 
@@ -10,21 +10,30 @@ The system operates entirely on a resilient, free-tier LLM API stack featuring G
 
 ```mermaid
 graph TD
-    User[User Query] -->|Input| Orch[Orchestrator Agent<br/>Decomposes Task]
-    Orch --> Planner[Planner Agent<br/>Formulates Execution Plan]
+    User[User Query] --> Orch[Orchestrator<br/>Decomposes Task]
+    Orch --> Planner[Planner<br/>Formulates Execution Plan]
     
     Planner -->|Assigns Subtasks| Agents
     
-    subgraph Agents [Specialist Agents]
-        R[Researcher<br/>Web Search & Memory]
+    subgraph Specialists [Specialist Agents]
+        R[Researcher<br/>Web Search]
         C[Coder<br/>Code Generation]
         DA[Data Analyst<br/>Data Interpretation]
+        SQL[SQL Assistant<br/>DB Queries]
     end
     
-    Agents --> Reviewer[Reviewer Agent<br/>Quality Assurance]
+    Agents --> Validation
     
-    Reviewer -->|Rejected| Agents
-    Reviewer -->|Approved| Aggregator[Aggregator Agent<br/>Synthesizes Final Output]
+    subgraph Validation [Validation Layer]
+        CE[Code Evaluator<br/>Edge Case Testing]
+        FC[Fact Checker<br/>Verification]
+    end
+    
+    Validation --> Reviewer[Reviewer<br/>Quality Assurance]
+    
+    Reviewer -->|Needs Revision| Orch
+    Reviewer -->|Approved / Max Cycles| Aggregator[Aggregator<br/>Synthesizes Final Output]
+    Validation -.->|Fast-path (Research only)| Aggregator
     
     Aggregator --> Output[Final Output]
 ```
@@ -34,11 +43,11 @@ graph TD
 ```mermaid
 sequenceDiagram
     participant Agent
-    participant Redis as Redis (Short-term Cache)
+    participant Redis as Redis (Exact Cache)
     participant Qdrant as Qdrant (Semantic Memory)
     
     Note over Agent, Qdrant: Retrieval Phase
-    Agent->>Redis: 1. Check exact match cache (O(1))
+    Agent->>Redis: 1. Check exact match cache + kwargs (O(1))
     alt Cache Hit
         Redis-->>Agent: Return instant response
     else Cache Miss
@@ -47,16 +56,17 @@ sequenceDiagram
     end
 
     Note over Agent, Qdrant: Write Phase
-    Agent->>Redis: 3. Cache exact prompt/response
+    Agent->>Redis: 3. Cache exact prompt/response/temperature
     Agent->>Qdrant: 4. Vectorize & store task insights
 ```
 
-## Core Features & Recent Improvements
+## Core Features & Workflow
 
-- **Resilient Model Routing:** Built-in fallback chains utilizing Tenacity for exponential backoffs. If a primary provider hits a `429 Too Many Requests`, the router seamlessly cascades to free-tier OpenRouter models (`google/gemma-4`, `qwen/qwen3-coder`) and `Z.ai`.
-- **Advanced Semantic Caching:** Prevents cross-topic cache poisoning by isolating semantic cache embeddings via strict agent-scoped namespaces. Semantic threshold is set to `0.95` to prevent false positive matches.
-- **Long-term Vector Memory:** The system writes findings to a Qdrant vector database keyed by a persistent `user_id`. Agents query this task history before searching the web to prevent redundant lookups.
-- **Vagueness Pre-checking:** The orchestrator utilizes a deterministic regex pre-check to reject ambiguous prompts before spending valuable LLM tokens.
+- **Orchestrator & Planner:** Tasks are intelligently decomposed into atomic subtasks by the Orchestrator, prioritized into a logical execution order by the Planner, and fanned out to specific specialists.
+- **Deep Validation Layer:** The `code_evaluator` autonomously tests generated code against adversarial edge cases. The `fact_checker` verifies the researcher's output. Any contradictions or test failures forcibly route the state to the Reviewer.
+- **Reviewer Feedback Loop:** The Reviewer evaluates the holistic output and acts as a strict QA gate. If the verdict is `needs_revision`, the task routes back to the Orchestrator for another pass (up to `MAX_REVIEW_CYCLES`), pausing via a configurable `RETRY_COOLDOWN_SECONDS` to allow provider rate-limits to recover.
+- **Resilient Model Routing:** Built-in fallback chains utilizing Tenacity for exponential backoffs. If a primary provider hits a `429 Too Many Requests` or `402 Payment Required`, the router seamlessly cascades to free-tier fallback models. 
+- **Advanced Semantic Caching:** Prevents cross-topic cache poisoning by isolating semantic cache embeddings via strict agent-scoped namespaces. The Redis layer enforces exact key matching combining `agent_name`, the prompt, and LLM hyperparameters (`temperature`, `max_tokens`).
 - **LangSmith Tracing:** Integrated out-of-the-box observability to trace agent execution paths, subtask routing, tool usage, and latencies.
 
 ## Setup & Installation
@@ -88,7 +98,8 @@ pip install -r requirements.txt
 Copy `.env.example` to `.env` and populate the required API keys:
 - `GROQ_API_KEY`       → console.groq.com (High-speed Llama models, generous free tier)
 - `OPENROUTER_API_KEY` → openrouter.ai (Access to Gemma, Qwen, Llama free tiers)
-- `ZAI_API_KEY`        → z.ai/chat → API Keys (glm-4.7-flash)
+- `ZAI_API_KEY`        → z.ai/chat (glm-4.7-flash)
+- `HF_TOKEN`           → huggingface.co (Serverless Inference Providers)
 - `TAVILY_API_KEY`     → tavily.com (Web search tool)
 - `LANGCHAIN_API_KEY`  → smith.langchain.com (Free developer tier for tracing)
 - `SECRET_KEY`         → run: `openssl rand -hex 32`
@@ -121,87 +132,29 @@ python app.py
 ```
 Open your browser to `http://localhost:7860`.
 
-## Testing
-
-Run the test suite using pytest:
-```bash
-pytest tests/ -v
-pytest evals/ -v
-```
-
-## Validation Scenarios
-
-To manually verify that the Orchestrator routes tasks correctly and that caching/memory functions work, try running the following queries in the Gradio UI:
-
-1. **Pure research, no code**
-   *Query:* `What are the key differences between transformer and mamba architecture for language models?`
-   *Expected:* Researcher + Aggregator activate. Web Search tool used. Coder is idle.
-
-2. **Pure code, minimal research**
-   *Query:* `Write a Python class that implements a thread-safe LRU cache with a configurable max size`
-   *Expected:* Coder agent + run_python agentic loop activate. Researcher provides minimal/no findings.
-
-3. **Full pipeline (research feeds code)**
-   *Query:* `Research how to use the Qdrant Python client to perform filtered vector search, then write a working example script`
-   *Expected:* All agents activate. Researcher gathers docs, Coder uses those docs in its context to write the script.
-
-4. **Data analysis**
-   *Query:* `Explain the mathematical intuition behind cosine similarity and write Python code to compute it from scratch without using any libraries`
-   *Expected:* Data Analyst and Coder both activate. Output contains both mathematical explanation and implementation.
-
-5. **Multi-part task (Orchestrator decomposition)**
-   *Query:* `Compare FastAPI and Flask for building REST APIs, write a hello world endpoint in both frameworks, and summarize which is better for async workloads`
-   *Expected:* Orchestrator decomposes this into 3+ subtasks. All specialists invoked.
-
-6. **Reviewer revision cycle trigger**
-   *Query:* `Write a production-ready Python decorator that retries a function on failure with exponential backoff, including proper logging, type hints, and unit tests`
-   *Expected:* The Reviewer is highly likely to reject the first draft due to the strict "production-ready + tests" requirement. Watch `review_cycles` exceed 1.
-
-7. **Short factual (Cache test)**
-   *Query:* `What is the CAP theorem?`
-   *Expected:* Run this once (takes ~10-15s). Run it again immediately. The second run should trigger a Redis semantic cache hit, with latency dropping to <1s.
-
-8. **Ambiguous task (Orchestrator fallback test)**
-   *Query:* `Help me with my project`
-   *Expected:* The Orchestrator's vagueness pre-check intercepts this. It asks for clarification without wasting LLM tokens.
-
-9. **Long context (Memory + Aggregator stress)**
-   *Query:* `Research the history of neural networks from the perceptron in 1958 to modern transformers in 2024, covering all major milestones, key papers, and the researchers behind them`
-   *Expected:* Researcher produces heavy findings. Aggregator successfully synthesizes a massive context block without hitting token limits or memory write failures.
-
-10. **Code with external data (Tool use chain)**
-    *Query:* `Write a Python script that fetches the current Bitcoin price from a free public API and displays it with a timestamp, including error handling for network failures`
-    *Expected:* Researcher uses `web_fetch` to find a public API endpoint, passes finding to Coder. Coder writes and tests the script using `run_python`.
-
 ## Provider Stack (config/agents.yaml)
 
-To maximize reliability on free tiers without hitting 402/429 errors, the model routing is strictly defined in `config/agents.yaml`:
+To maximize reliability on free tiers without hitting 402/429 errors, model routing is strictly defined in `config/agents.yaml`. We currently use Groq's high-speed Llama-3 endpoints as the primary engines across the board to navigate HuggingFace credit exhaustion and API saturation, supported by robust fallback chains.
 
-| Agent | Primary Model (Fast) | Fallback Chain (Resilient) |
+| Agent | Primary Model | Fallback Chain |
 |---|---|---|
-| **Orchestrator** | `groq:llama-3.3-70b-versatile` | `zai`, `openrouter:llama-3.3-70b` |
-| **Planner** | `groq:llama-3.3-70b-versatile` | `zai`, `openrouter:llama-3.3-70b` |
-| **Researcher** | `groq:llama-3.1-8b-instant` | `zai`, `openrouter:llama-3.3-70b` |
-| **Coder** | `groq:llama-3.3-70b-versatile` | `openrouter:gemma-4-26b`, `zai` |
-| **Data Analyst**| `groq:llama-3.1-8b-instant` | `openrouter:qwen3-coder`, `zai` |
-| **Reviewer** | `groq:llama-3.3-70b-versatile` | `openrouter:gemma-4-26b`, `zai` |
-| **Aggregator** | `groq:llama-3.3-70b-versatile` | `zai`, `openrouter:gemma-4`, `openrouter:qwen3` |
+| **Orchestrator** | `groq:llama-3.3-70b-versatile` | `openrouter`, `zai` |
+| **Planner** | `groq:llama-3.3-70b-versatile` | `huggingface`, `zai` |
+| **Researcher** | `groq:llama-3.1-8b-instant` | `openrouter`, `zai` |
+| **Fact Checker** | `groq:llama-3.3-70b-versatile` | `huggingface`, `zai` |
+| **Coder** | `groq:llama-3.3-70b-versatile` | `huggingface`, `zai` |
+| **Code Evaluator** | `groq:llama-3.3-70b-versatile` | `huggingface`, `zai` |
+| **Reviewer** | `groq:llama-3.3-70b-versatile` | `openrouter`, `zai` |
+| **Aggregator** | `groq:llama-3.3-70b-versatile` | `huggingface`, `openrouter`, `zai` |
+| **Data Analyst** | `groq:llama-3.1-8b-instant` | `huggingface`, `zai` |
+| **SQL Assistant** | `groq:llama-3.3-70b-versatile` | `huggingface`, `zai` |
 
 ### Why these specific models?
 
-The selection of LLMs is designed around three core realities of free-tier APIs: **Speed**, **Reasoning Capability**, and **Rate-Limit Resilience**.
-
-1. **Groq (Llama 3.3 70B & 3.1 8B) for Speed & Tool-calling:**
-   Groq is the primary engine for most agents (`Researcher`, `Coder`, `Reviewer`, `Aggregator`). It runs on specialized LPUs, making it incredibly fast. Speed is essential here because a single user query often requires 5-10 sequential agent invocations. Groq's high throughput prevents the user from waiting minutes for an answer.
-
-2. **DeepSeek (Reasoner/Chat) for Strategic Planning:**
-   DeepSeek is explicitly configured as the primary model for the `Planner` and `Orchestrator`. These agents don't need to read large web pages; instead, they need to perform deep logical deduction, step-by-step task breakdown, and strict JSON instruction-following. DeepSeek excels at architectural reasoning.
-
-3. **Deep, Redundant Fallback Chains (The "Aggregator" Survival Strategy):**
-   When multiple agents run sequentially, they rapidly drain the free-tier requests-per-minute (RPM) limits. By the time the final `Aggregator` agent runs, primary APIs (like Groq) often return a `429 Too Many Requests` error. 
-   To survive this, the system uses deep fallback chains composed of robust OpenRouter free models (`gemma-4`, `qwen3`, `llama-3.3`). If one model is rate-limited, the `Tenacity` router automatically cascades to the next one, ensuring the pipeline completes instead of crashing midway.
-
-*(Note: DeepSeek endpoints were deliberately removed from the default fallback chains due to frequent `402 Payment Required` hard-failures on exhausted free accounts, which wasted time on useless network requests).*
+1. **Groq (Llama 3.3 70B & 3.1 8B) for Speed & Consistency:**
+   Groq is the primary engine for most agents. Speed is essential here because a single user query often requires multi-agent invocations. Groq's high throughput prevents the user from waiting minutes for an answer.
+2. **Deep, Redundant Fallback Chains:**
+   When multiple agents run sequentially, they rapidly drain free-tier request limits. To survive `429 Too Many Requests` or `402 Payment Required` errors, the `Tenacity` router automatically cascades to robust secondary models (like `DeepSeek-R1`, `gemma-4-26b`, and `GLM-5.2`), ensuring the pipeline completes instead of crashing midway.
 
 ## Adding a New Agent
 
