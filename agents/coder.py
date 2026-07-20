@@ -133,29 +133,22 @@ def _execute_tool_calls(tool_calls: list[dict]) -> list[dict]:
 
 
 def _verify_code(code: str) -> tuple[bool, str]:
-    """
-    Force-execute *code* via run_python exactly once, regardless of
-    whether the model chose to test it during the agentic loop.
-
-    Returns (verified, exec_output) where *verified* is True if the
-    execution result indicates success without unhandled exceptions.
-    """
+    """Force-execute *code* via run_python exactly once. Uses run_python's
+    structured return so every exception type is caught correctly, not
+    just the ones in a hand-maintained marker list."""
     if not code or not code.strip():
         return False, "No code produced — nothing to execute."
 
     result = run_python(code)
-    verified = result.get("success", False)
-    
-    exec_output = result.get("output", "")
-    if result.get("error_type"):
-        exec_output += f"\nError Type: {result['error_type']}"
+    verified = result["success"]
 
     if verified:
         logger.info("Coder self-verification PASSED")
     else:
-        logger.warning("Coder self-verification FAILED: %s", exec_output[:300])
+        logger.warning("Coder self-verification FAILED (%s): %s",
+                        result["error_type"], result["output"][:300])
 
-    return verified, exec_output
+    return verified, result["output"]
 
 
 # ---------------------------------------------------------------------------

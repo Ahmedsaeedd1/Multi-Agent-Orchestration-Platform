@@ -25,6 +25,11 @@ def planner_node(state: AgentState) -> dict:
     subtasks = state.get("subtasks", [])
     assignments = state.get("assignments", {})
 
+    # Cheap internal skip — not a graph-level routing decision, just an
+    # optimization that still goes through this single code path.
+    if len(subtasks) == 1:
+        return {"subtasks": subtasks, "plan_reasoning": "Single subtask — no reordering needed."}
+
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Subtasks: {subtasks}\nAssignments: {assignments}"},

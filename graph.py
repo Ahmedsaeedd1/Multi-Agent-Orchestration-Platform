@@ -488,7 +488,7 @@ def build_graph() -> StateGraph:
     builder.add_conditional_edges(
         "orchestrator",
         route_after_orchestrator,
-        {"planner": "planner", "researcher": "researcher", "end": END}
+        {"planner": "planner", "end": END}
     )
 
     # Planner is the actual fan-out point now. Reused unchanged from

@@ -166,9 +166,11 @@ def run_python(code: str) -> dict:
             
         if result.returncode == 0:
             return {"success": True, "output": output, "error_type": None}
-        else:
-            return {"success": False, "output": output, "error_type": "ExecutionError"}
             
+        import re
+        match = re.search(r'^(\w+Error|\w+Exception):', result.stderr, re.MULTILINE)
+        error_type = match.group(1) if match else "UnknownError"
+        return {"success": False, "output": output, "error_type": error_type}
     except subprocess.TimeoutExpired:
         return {"success": False, "output": f"TimeoutError: execution exceeded {_TIMEOUT_SECONDS}s", "error_type": "TimeoutError"}
     except Exception as e:
