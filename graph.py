@@ -403,19 +403,26 @@ def route_after_orchestrator(state: AgentState):
     return "planner"
 
 def route_specialist(state: AgentState) -> Literal["reviewer", "aggregator"]:
-    """Bypass reviewer for pure informational queries, unless validation agents flagged an issue."""
+    """Route to reviewer if coder/data_analyst were assigned, OR if a
+    validation agent (fact_checker, code_evaluator) flagged a real problem —
+    a contradiction or a failing verdict must never be silently bypassable
+    just because the fast-path would otherwise skip reviewer.
+    """
     assignments = set(state.get("_assignments", {}).values())
-    
-    # Check if validation agents found problems
-    fact_check = state.get("fact_check_output", {})
-    code_eval = state.get("code_eval_output", {})
-    
-    if fact_check.get("contradictions") or code_eval.get("verdict") == "fail":
+
+    fact_check_output = state.get("fact_check_output") or {}
+    if fact_check_output.get("contradictions"):
+        logger.info("Fact-checker found contradictions — forcing reviewer.")
         return "reviewer"
-        
+
+    code_eval_output = state.get("code_eval_output") or {}
+    if code_eval_output.get("verdict") == "fail":
+        logger.info("Code evaluator verdict is fail — forcing reviewer.")
+        return "reviewer"
+
     if "coder" in assignments or "data_analyst" in assignments:
         return "reviewer"
-        
+
     logger.info("Fast-path: bypassing reviewer for pure research task.")
     return "aggregator"
 
@@ -436,6 +443,10 @@ def route_orchestrator_to_specialists(state: AgentState) -> list[Send]:
     logger.debug("Fan-out sends: %s", [s.node for s in sends])
     return sends
 
+
+import time
+
+RETRY_COOLDOWN_SECONDS = float(os.getenv("RETRY_COOLDOWN_SECONDS", "8"))
 
 def route_reviewer(state: AgentState) -> Literal["aggregator", "orchestrator"]:
     """Decide next step after review."""
@@ -459,9 +470,10 @@ def route_reviewer(state: AgentState) -> Literal["aggregator", "orchestrator"]:
         return "aggregator"
 
     logger.info(
-        "METRIC feedback_loop trigger=needs_revision cycle=%d/%d route=orchestrator",
-        cycle, MAX_REVIEW_CYCLES,
+        "METRIC feedback_loop trigger=needs_revision cycle=%d/%d route=orchestrator cooldown=%.1fs",
+        cycle, MAX_REVIEW_CYCLES, RETRY_COOLDOWN_SECONDS,
     )
+    time.sleep(RETRY_COOLDOWN_SECONDS)
     return "orchestrator"
 
 # ---------------------------------------------------------------------------

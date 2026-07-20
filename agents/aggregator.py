@@ -52,6 +52,7 @@ def aggregator_node(state: AgentState) -> dict:
     research_output = state.get("research_output", {})
     code = state.get("code", "")
     analysis = state.get("analysis", "")
+    sql_output = state.get("sql_output")
 
     # Build a deduplicated sources list from notes that look like URLs
     sources_section = ""
@@ -60,7 +61,7 @@ def aggregator_node(state: AgentState) -> dict:
         for s in research_output["sources"]:
             if s["url"] not in urls:
                 urls.append(s["url"])
-    if not any([research_notes, code.strip(), analysis.strip(), state.get("sql_output")]):
+    if not any([research_notes, code.strip(), analysis.strip(), sql_output]):
         return {
             "final_output": (
                 "⚠️ **Execution Failed**\n\n"
@@ -87,9 +88,6 @@ def aggregator_node(state: AgentState) -> dict:
 
     user_content = f"Research findings:\n{chr(10).join(research_notes)}\n"
 
-    if state.get("sql_output"):
-        user_content += f"\n## SQL Database Execution Results\nThe following data was successfully retrieved from the database:\n{state['sql_output']}\n"
-
     if code and code.strip():
         user_content += (
             "\n## Code to include verbatim\n"
@@ -97,6 +95,13 @@ def aggregator_node(state: AgentState) -> dict:
             "You MUST reproduce it EXACTLY inside a ```python ... ``` fenced block "
             "under a ## Code Implementation section — do not paraphrase or omit it.\n"
             f"```python\n{code}\n```\n"
+        )
+
+    if sql_output:
+        user_content += (
+            "\n## SQL query result\n"
+            f"Query executed: {sql_output.get('query', '')}\n"
+            f"Result summary: {sql_output.get('summary', '')}\n"
         )
 
     if analysis and analysis.strip():
@@ -123,16 +128,15 @@ def aggregator_node(state: AgentState) -> dict:
         logger.error("Aggregator failed: %s", e)
 
         # Fail-visible, not fail-silent: raw fallback content must never
-        # look indistinguishable from a real aggregated answer. A user
-        # expecting a formatted markdown summary should immediately see
-        # that aggregation failed and that what follows is unreviewed
-        # raw material, not a polished response.
+        # look indistinguishable from a real aggregated answer.
         fallback_parts = ["⚠️ Aggregation failed — showing raw upstream outputs (unformatted):"]
         
         if research_notes:
             fallback_parts.append("### Raw Research Notes\n" + "\n".join(f"- {n}" for n in research_notes))
         if code:
             fallback_parts.append(f"### Raw Generated Code\n```python\n{code}\n```")
+        if sql_output:
+            fallback_parts.append(f"### Raw SQL Result\nQuery: {sql_output.get('query', '')}\nResult: {sql_output.get('summary', '')}")
         if analysis:
             fallback_parts.append(f"### Raw Analysis\n{analysis}")
 

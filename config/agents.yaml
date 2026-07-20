@@ -32,7 +32,7 @@ researcher:
   tools: [web_search, web_fetch, memory_write]
 
 fact_checker:
-  primary:   { provider: openrouter,   model: deepseek/deepseek-r1:free }
+  primary:   { provider: huggingface,  model: deepseek-ai/DeepSeek-R1:novita }
   fallback:
     - { provider: groq, model: llama-3.3-70b-versatile }
     - { provider: zai,  model: glm-4.7-flash }
@@ -41,7 +41,7 @@ fact_checker:
   tools: [web_search, memory_read]
 
 coder:
-  primary:   { provider: huggingface,  model: moonshotai/Kimi-K2.7-Code:novita }
+  primary:   { provider: huggingface,  model: moonshotai/Kimi-K2.7-Code:Together AI }
   fallback:
     - { provider: huggingface, model: zai-org/GLM-5.2:novita }
     - { provider: groq,        model: llama-3.3-70b-versatile }
@@ -54,7 +54,7 @@ coder:
   # capable general model if Kimi fails.
 
 code_evaluator:
-  primary:   { provider: huggingface,  model: zai-org/GLM-5.2:novita }
+  primary:   { provider: huggingface,  model: zai-org/GLM-5.2:Together AI }
   fallback:
     - { provider: groq,        model: llama-3.3-70b-versatile }
     - { provider: zai,         model: glm-4.7-flash }
@@ -91,7 +91,7 @@ aggregator:
   # than latency for the very last step in the pipeline.
 
 data_analyst:
-  primary:   { provider: huggingface, model: deepseek-ai/DeepSeek-V4-Flash:novita }
+  primary:   { provider: huggingface, model: deepseek-ai/DeepSeek-V4-Flash:Fireworks }
   fallback:
     - { provider: groq, model: llama-3.1-8b-instant }
     - { provider: zai,  model: glm-4.7-flash }
@@ -99,7 +99,7 @@ data_analyst:
   tools: [run_python, read_file, memory_write]
 
 sql_assistant:
-  primary:   { provider: huggingface, model: deepseek-ai/DeepSeek-V4-Flash:novita }
+  primary:   { provider: huggingface, model: deepseek-ai/DeepSeek-V4-Flash:Fireworks }
   fallback:
     - { provider: groq, model: llama-3.3-70b-versatile }
     - { provider: zai,  model: glm-4.7-flash }
