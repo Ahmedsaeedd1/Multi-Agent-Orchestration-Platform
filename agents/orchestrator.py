@@ -69,25 +69,6 @@ def _is_vague_task(task: str) -> bool:
     return False
 
 
-def _llm_classify_vague(task: str) -> bool:
-    """Fast, cheap pre-check using the fastest model — not the full orchestrator prompt."""
-    try:
-        messages = [
-            {"role": "system", "content": (
-                "Reply with exactly one word: VAGUE or CONCRETE. "
-                "VAGUE means the message has no specific topic, subject, or "
-                "actionable request. CONCRETE means it names a real subject "
-                "to research, build, or analyze."
-            )},
-            {"role": "user", "content": task},
-        ]
-        response = router.call("researcher", messages, max_tokens=5, temperature=0.0)
-        return "VAGUE" in response.upper()
-    except Exception as e:
-        logger.warning("LLM vague classification failed: %s", e)
-        return False  # fail open — don't block on classifier failure
-
-
 # ---------------------------------------------------------------------------
 # Prompt
 # ---------------------------------------------------------------------------
@@ -99,7 +80,7 @@ SYSTEM_PROMPT = (
     "Agent selection rules — follow strictly:\n"
     "- researcher: for ANY question asking about facts, comparisons, explanations, "
     "concepts, recommendations, or 'what/why/how' questions. This is the DEFAULT agent.\n"
-    "- coder: ONLY when the task explicitly requires writing, debugging, executing code, or creating code examples/endpoints.\n"
+    "- coder: Assign whenever the task requires writing, debugging, executing code, or creating code examples/endpoints.\n"
     "- data_analyst: ONLY when the task explicitly requires analysing a dataset, "
     "running statistics, or producing charts.\n"
     "- sql_assistant: ONLY when the task explicitly requires querying a SQL database, "
@@ -113,7 +94,8 @@ SYSTEM_PROMPT = (
     "- assignments keys are string indices (\"0\", \"1\", ...) matching subtasks positions.\n"
     "- agent values must be one of: researcher, coder, data_analyst, sql_assistant.\n"
     "- For simple fact-based questions ('what is X', 'explain Y'), return a SINGLE, unified subtask.\n"
-    "- Do not artificially decompose simple questions into multiple subtasks.\n"
+    "- If the task asks for a comparative claim requiring quantitative data (e.g., price-to-performance, cost comparison, benchmark comparison), you MUST explicitly create a subtask to gather comparable figures and assign it to data_analyst (or researcher).\n"
+    "- Use data_analyst for CSV/JSON/API data processing, sql_assistant for database queries.\n"
     "- Do NOT assign researcher to pure coding tasks unless the user explicitly asks for research/explanation.\n"
     "- For most questions, ALL subtasks should go to researcher.\n"
     "- Do NOT include any text outside the JSON object."
@@ -136,7 +118,7 @@ def orchestrator_node(state: AgentState) -> dict:
         logger.warning("Orchestrator received empty task — using fallback")
         return _fallback(task)
     
-    if _is_vague_task(task) or _llm_classify_vague(task):
+    if _is_vague_task(task):
         logger.info("Task detected as vague — requesting clarification")
         return {
             "subtasks": [],
@@ -150,9 +132,15 @@ def orchestrator_node(state: AgentState) -> dict:
             "needs_clarification": True,
         }
 
+    user_content = task
+    review = state.get("review") or {}
+    if review.get("verdict") == "needs_revision" and review.get("feedback"):
+        logger.info("Cycle %d: Injecting reviewer feedback into orchestrator prompt", state.get("review_cycle_count", 0))
+        user_content += f"\n\nPREVIOUS ATTEMPT FAILED. Reviewer feedback to fix:\n{review['feedback']}"
+
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": task},
+        {"role": "user", "content": user_content},
     ]
 
     try:
@@ -189,7 +177,9 @@ def orchestrator_node(state: AgentState) -> dict:
 
 def _fallback(task: str) -> dict:
     """Return a safe single-subtask fallback."""
+    task_lower = task.lower()
+    is_code = any(kw in task_lower for kw in ["code", "python", "script", "function", "bug", "implement"])
     return {
         "subtasks": [task],
-        "assignments": {"0": "researcher"},
+        "assignments": {"0": "coder" if is_code else "researcher"},
     }

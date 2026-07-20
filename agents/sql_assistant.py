@@ -46,9 +46,14 @@ def sql_assistant_node(state: dict) -> dict:
         "Output valid JSON matching the SQLAssistantOutput schema. "
         "Do NOT output anything except the JSON."
     )
+    user_content = state.get("task", "")
+    review = state.get("review") or {}
+    if review.get("verdict") == "needs_revision" and review.get("feedback"):
+        user_content += f"\n\nPREVIOUS ATTEMPT FAILED. Reviewer feedback to fix:\n{review['feedback']}"
+
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": state.get("task", "")}
+        {"role": "user", "content": user_content}
     ]
     
     output: SQLAssistantOutput = call_agent_structured(

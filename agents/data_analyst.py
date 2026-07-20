@@ -76,6 +76,9 @@ def _execute_tool_calls(tool_calls: list[dict]) -> list[dict]:
                 permission_layer=permission_layer,
             )
             logger.info("Tool '%s' succeeded", tool_name)
+        except PermissionError as e:
+            result = f"PermissionError: {e}"
+            logger.warning("Tool '%s' blocked: %s", tool_name, e)
         except Exception as e:
             result = f"ToolError: {e}"
             logger.warning("Tool '%s' failed: %s", tool_name, e)
@@ -105,16 +108,19 @@ def data_analyst_node(state: AgentState) -> dict:
         "After tool use, you will be asked for a final structured JSON response."
     )
 
+    user_content = (
+        f"Task: {task}\n"
+        f"Research context: {chr(10).join(research_notes)}\n"
+        f"Code: {code}"
+    )
+
+    review = state.get("review") or {}
+    if review.get("verdict") == "needs_revision" and review.get("feedback"):
+        user_content += f"\n\nPREVIOUS ATTEMPT FAILED. Reviewer feedback to fix:\n{review['feedback']}"
+
     messages: list[dict] = [
         {"role": "system", "content": system_content},
-        {
-            "role": "user",
-            "content": (
-                f"Task: {task}\n"
-                f"Research context: {chr(10).join(research_notes)}\n"
-                f"Code: {code}"
-            ),
-        },
+        {"role": "user", "content": user_content},
     ]
 
     try:
@@ -149,4 +155,4 @@ def data_analyst_node(state: AgentState) -> dict:
 
     except Exception as e:
         logger.error("Data analyst failed: %s", e)
-        return {"analysis": "Analysis failed"}
+        return {"analysis": ""}

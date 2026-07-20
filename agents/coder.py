@@ -196,15 +196,15 @@ def coder_node(state: AgentState) -> dict:
         "After tool use, you will be asked for a final structured JSON response."
     )
 
+    user_content = f"Task: {task}\nResearch context: {chr(10).join(research_notes)}"
+    
+    review = state.get("review") or {}
+    if review.get("verdict") == "needs_revision" and review.get("feedback"):
+        user_content += f"\n\nPREVIOUS ATTEMPT FAILED. Reviewer feedback to fix:\n{review['feedback']}"
+
     messages: list[dict] = [
         {"role": "system", "content": system_content},
-        {
-            "role": "user",
-            "content": (
-                f"Task: {task}\n"
-                f"Research context: {chr(10).join(research_notes)}"
-            ),
-        },
+        {"role": "user", "content": user_content},
     ]
 
     try:
@@ -275,7 +275,7 @@ def coder_node(state: AgentState) -> dict:
     except Exception as e:
         logger.error("Coder node failed: %s", e)
         return {
-            "code": "# Code generation failed",
+            "code": "",
             "code_verified": False,
             "code_exec_output": f"Coder node exception: {e}",
         }

@@ -14,7 +14,9 @@ router = ModelRouter()
 
 SYSTEM_PROMPT = (
     "You are the reviewer. Review the outputs below for quality and completeness. "
-    "Return approved or needs_revision with specific feedback. "
+    "Return approved or needs_revision with specific, addressable feedback. "
+    "If rejecting, you MUST cite the exact issue (e.g., 'market share figures lack a consistent source/quarter'). "
+    "Do NOT give vague feedback like 'could be improved' or 'lacks depth'. "
     "Return valid JSON only.\n\n"
     "IMPORTANT: If code is present, it includes a self-verification result "
     "showing whether it was actually executed and whether that execution "
@@ -53,6 +55,15 @@ def reviewer_node(state: AgentState) -> dict:
             f"Contradictions Found: {fact_check_output.get('contradictions', [])}\n"
         )
 
+    sql_output = state.get("sql_output")
+    sql_block = ""
+    if sql_output:
+        sql_block = (
+            f"\n\nSQL Output:\n"
+            f"Query: {sql_output.get('query', '')}\n"
+            f"Summary: {sql_output.get('summary', '')}"
+        )
+
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {
@@ -63,6 +74,7 @@ def reviewer_node(state: AgentState) -> dict:
                 f"Code:\n{code}"
                 f"{code_verification_block}\n\n"
                 f"Analysis:\n{analysis}"
+                f"{sql_block}"
             ),
         },
     ]

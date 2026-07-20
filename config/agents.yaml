@@ -2,6 +2,9 @@
 # Models: only Phase 0 confirmed working models.
 # Providers confirmed OK: groq, openrouter/gemma-4-26b, zai, huggingface/featherless-ai, huggingface/novita
 # Providers confirmed DEAD: deepseek (402), openrouter/qwen3-coder (429), openrouter/gpt-oss-120b (404)
+# NOTE: model swaps below address capability gaps only. Wiring bugs (route_specialist
+# blindness, orchestrator fast-path, cache contamination) are separate and are NOT
+# fixed by any model change — see the earlier bug-fix prompt for those.
 
 orchestrator:
   primary:   { provider: groq,         model: llama-3.3-70b-versatile }
@@ -16,6 +19,9 @@ planner:
     - { provider: groq,        model: llama-3.3-70b-versatile }
     - { provider: zai,         model: glm-4.7-flash }
   temperature: 0.3
+  # Unchanged. If planner is genuinely producing bad orderings after the
+  # wiring fixes land, log plan_reasoning for 5 real runs before swapping —
+  # R1 is a strong reasoning model, unlikely to be the actual bottleneck here.
 
 researcher:
   primary:   { provider: groq,         model: llama-3.1-8b-instant }
@@ -35,30 +41,30 @@ fact_checker:
   tools: [web_search, memory_read]
 
 coder:
-  primary:   { provider: huggingface,  model: Qwen/Qwen3-8B:featherless-ai }
+  primary:   { provider: huggingface,  model: moonshotai/Kimi-K2.7-Code:novita }
   fallback:
+    - { provider: huggingface, model: zai-org/GLM-5.2:novita }
     - { provider: groq,        model: llama-3.3-70b-versatile }
-    - { provider: zai,         model: glm-4.7-flash }
   temperature: 0.1
   max_tokens: 4096
   tools: [run_python, read_file, write_file, memory_write]
+  # Changed from GLM-5.2 to Kimi-K2.7-Code — it's a coding-specialist model,
+  # a better fit than a general-purpose model for this specific role.
+  # GLM-5.2 demoted to fallback rather than dropped, since it's still a
+  # capable general model if Kimi fails.
 
 code_evaluator:
-  primary:   { provider: huggingface,  model: Qwen/Qwen3-8B:featherless-ai }
+  primary:   { provider: huggingface,  model: zai-org/GLM-5.2:novita }
   fallback:
     - { provider: groq,        model: llama-3.3-70b-versatile }
     - { provider: zai,         model: glm-4.7-flash }
   temperature: 0.1
   max_tokens: 2048
   tools: [run_static_analysis, run_sandboxed_with_edge_cases, memory_read]
+  # Left as GLM-5.2 deliberately — do not also swap this to Kimi in the same
+  # pass as the coder change, or you won't know which swap caused any
+  # change in behavior. Test coder's swap alone first.
 
-data_analyst:
-  primary:   { provider: huggingface,  model: deepseek-ai/DeepSeek-R1:novita }
-  fallback:
-    - { provider: groq,        model: llama-3.1-8b-instant }
-    - { provider: zai,         model: glm-4.7-flash }
-  temperature: 0.2
-  tools: [run_python, read_file, memory_write]
 
 reviewer:
   primary:   { provider: groq,         model: llama-3.3-70b-versatile }
@@ -69,17 +75,31 @@ reviewer:
   tools: [memory_read]
 
 aggregator:
-  primary:   { provider: groq,         model: llama-3.1-8b-instant }
+  primary:   { provider: huggingface,  model: zai-org/GLM-5.2:novita }
   fallback:
     - { provider: groq,        model: llama-3.3-70b-versatile }
     - { provider: openrouter,  model: google/gemma-4-26b-a4b-it:free }
     - { provider: zai,         model: glm-4.7-flash }
-  temperature: 0.3
+  temperature: 0.2
   max_tokens: 4096
   tools: [memory_read]
+  # Changed from llama-3.1-8b-instant to GLM-5.2, and dropped temperature
+  # from 0.3 to 0.2. This is your highest-stakes text-generation role —
+  # it follows a long, strict system prompt (formatting rules, hedging
+  # rules, verbatim-code rules) and produces the final user-facing output.
+  # An 8B fast model is the wrong tradeoff here; correctness matters more
+  # than latency for the very last step in the pipeline.
+
+data_analyst:
+  primary:   { provider: huggingface, model: deepseek-ai/DeepSeek-V4-Flash:novita }
+  fallback:
+    - { provider: groq, model: llama-3.1-8b-instant }
+    - { provider: zai,  model: glm-4.7-flash }
+  temperature: 0.2
+  tools: [run_python, read_file, memory_write]
 
 sql_assistant:
-  primary:   { provider: huggingface, model: deepseek-ai/DeepSeek-R1:novita }
+  primary:   { provider: huggingface, model: deepseek-ai/DeepSeek-V4-Flash:novita }
   fallback:
     - { provider: groq, model: llama-3.3-70b-versatile }
     - { provider: zai,  model: glm-4.7-flash }

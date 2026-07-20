@@ -170,6 +170,8 @@ def _build_old_state(state: AgentState) -> dict:
         old["fact_check_output"] = state["fact_check_output"]
     if state.get("analysis_output") and "summary" in (state["analysis_output"] or {}):
         old["analysis"] = state["analysis_output"]["summary"]
+    if state.get("sql_output"):
+        old["sql_output"] = state["sql_output"]
     return old
 
 # ---------------------------------------------------------------------------
@@ -398,18 +400,22 @@ def route_after_orchestrator(state: AgentState):
     """Route after orchestrator: handle clarification, planner bypass, or normal planner."""
     if state.get("needs_clarification"):
         return "end"
-    subtasks = state.get("_subtasks", [])
-    assignments = state.get("_assignments", {})
-    if len(subtasks) == 1 and list(assignments.values()) == ["researcher"]:
-        logger.info("Fast-path: bypassing planner for simple research task.")
-        return "researcher"
     return "planner"
 
 def route_specialist(state: AgentState) -> Literal["reviewer", "aggregator"]:
-    """Bypass reviewer for pure informational queries."""
+    """Bypass reviewer for pure informational queries, unless validation agents flagged an issue."""
     assignments = set(state.get("_assignments", {}).values())
+    
+    # Check if validation agents found problems
+    fact_check = state.get("fact_check_output", {})
+    code_eval = state.get("code_eval_output", {})
+    
+    if fact_check.get("contradictions") or code_eval.get("verdict") == "fail":
+        return "reviewer"
+        
     if "coder" in assignments or "data_analyst" in assignments:
         return "reviewer"
+        
     logger.info("Fast-path: bypassing reviewer for pure research task.")
     return "aggregator"
 

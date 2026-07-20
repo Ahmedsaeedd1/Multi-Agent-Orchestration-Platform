@@ -61,17 +61,11 @@ class SemanticCache:
     @staticmethod
     def cache_key(agent_name: str, messages: list) -> str:
         """
-        SHA256 hash of normalized (agent_name, messages) JSON.
-        The same input always produces the same key regardless of dict-key
-        ordering within individual message objects.
+        Constructs a cache key using the agent name and the full task text
+        to prevent collision issues from hashing or truncation.
         """
-        normalized = json.dumps(
-            {"agent": agent_name, "messages": messages},
-            sort_keys=True,
-            ensure_ascii=False,
-        )
-        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-        return f"cache:exact:{digest}"
+        last_content = messages[-1]["content"] if messages else ""
+        return f"cache:exact:{agent_name}:{last_content}"
 
     # ------------------------------------------------------------------
     # Core orchestrator

@@ -304,18 +304,24 @@ def researcher_node(state: AgentState) -> dict:
 
     system_content += memory_context
 
+    user_content = (
+        f"Task: {task}\n\n"
+        f"Your subtasks:\n{subtask_text}\n\n"
+    )
+    
+    review = state.get("review") or {}
+    if review.get("verdict") == "needs_revision" and review.get("feedback"):
+        user_content += f"PREVIOUS ATTEMPT FAILED. Reviewer feedback to fix:\n{review['feedback']}\n\n"
+
+    user_content += (
+        "Call web_search NOW with a relevant query. "
+        "Respond with ONLY a JSON object: "
+        '{"tool_calls": [{"name": "web_search", "args": {"query": "..."}}]}'
+    )
+
     messages: list[dict] = [
         {"role": "system", "content": system_content},
-        {
-            "role": "user",
-            "content": (
-                f"Task: {task}\n\n"
-                f"Your subtasks:\n{subtask_text}\n\n"
-                "Call web_search NOW with a relevant query. "
-                "Respond with ONLY a JSON object: "
-                '{"tool_calls": [{"name": "web_search", "args": {"query": "..."}}]}'
-            ),
-        },
+        {"role": "user", "content": user_content},
     ]
 
     try:
@@ -406,7 +412,7 @@ def researcher_node(state: AgentState) -> dict:
 
     except (StructuredCallError, Exception) as e:
         logger.error("Researcher node failed: %s", e)
-        return {"research_notes": ["Research failed — no findings"]}
+        return {"research_notes": []}
 
     # Outside try/except — memory failure never triggers fallback
     user_id = state.get("user_id", "default")

@@ -78,14 +78,17 @@ def run_sandboxed_with_edge_cases(code: str, edge_case_inputs: list[dict]) -> di
         error = None
         output = ""
 
+        import tempfile
         try:
-            res = subprocess.run(
-                [sys.executable, "-c", code],
-                input=input_data,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
+            with tempfile.TemporaryDirectory() as temp_dir:
+                res = subprocess.run(
+                    [sys.executable, "-c", code],
+                    input=input_data,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    cwd=temp_dir
+                )
             output = res.stdout
             if res.returncode != 0:
                 error = res.stderr or "Non-zero exit code"

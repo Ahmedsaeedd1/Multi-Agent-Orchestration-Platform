@@ -9,7 +9,11 @@ from agents.structured_call import call_agent_structured
 logger = logging.getLogger(__name__)
 
 class ExtractedClaims(BaseModel):
-    claims: list[str]
+    qualitative_claims: list[str]
+    numeric_claims: list[str]
+
+class NumericConsistencyOutput(BaseModel):
+    contradictions: list[str]
 
 class ClaimVerdict(BaseModel):
     claim: str
@@ -22,18 +26,6 @@ class FactCheckOutput(BaseModel):
     confidence_summary: str
 
 def fact_checker_node(state: dict) -> dict:
-    """
-    1. Reads state['research_output']['findings'] (the Researcher's output)
-    2. Generates a list of specific, checkable claims extracted from those findings
-       via the model (e.g. "Company X's revenue was $Y in year Z" - not vague
-       statements like "the market is growing")
-    3. For each claim, calls web_search to independently verify it
-    4. Strips <think> blocks from model output (handled in call_agent_structured)
-    5. Classifies each claim: "confirmed", "contradicted", or "unverifiable"
-    6. Returns {"fact_check_output": {"claims_checked": [...],
-                                      "contradictions": [...],
-                                      "confidence_summary": str}}
-    """
     router = ModelRouter()
     registry = build_registry()
     web_search = registry.get("web_search").fn
@@ -43,7 +35,6 @@ def fact_checker_node(state: dict) -> dict:
     if not findings:
         return {"fact_check_output": None}
 
-    # Format findings into a string
     findings_text = ""
     for i, f in enumerate(findings, 1):
         if isinstance(f, dict):
@@ -54,14 +45,15 @@ def fact_checker_node(state: dict) -> dict:
     # Stage 1: Extract Claims
     sys_prompt = (
         "You are a rigorous Fact-Checker. Your goal is to verify the claims made in research findings.\n"
-        "Extract up to 5 specific, checkable claims from the provided findings. Focus on hard numbers, "
-        "dates, names, and definitive statements. Avoid vague or subjective statements.\n"
+        "Extract up to 5 specific, checkable claims from the provided findings. Separate them into "
+        "qualitative_claims and numeric_claims (e.g. 'AWS holds 29% market share', 'Revenue was $5B').\n"
+        "Focus on hard numbers, dates, names, and definitive statements. Avoid vague or subjective statements.\n"
         "Output valid JSON matching the ExtractedClaims schema."
     )
     
     messages = [
         {"role": "system", "content": sys_prompt},
-        {"role": "user", "content": f"Extract claims from these findings (MAX 5 claims):\n\n{findings_text}"}
+        {"role": "user", "content": f"Extract claims from these findings (MAX 5 claims total):\n\n{findings_text}"}
     ]
 
     try:
@@ -71,7 +63,9 @@ def fact_checker_node(state: dict) -> dict:
             messages=messages,
             schema=ExtractedClaims
         )
-        claims = extracted.claims[:5]  # Enforce max 5 claims
+        qual_claims = extracted.qualitative_claims or []
+        num_claims = extracted.numeric_claims or []
+        claims = (qual_claims + num_claims)[:5]
     except Exception as e:
         logger.error(f"Failed to extract claims: {e}")
         return {
@@ -91,11 +85,33 @@ def fact_checker_node(state: dict) -> dict:
             }
         }
 
-    # Append first response to history
     messages.append({
         "role": "assistant",
         "content": extracted.model_dump_json(indent=2)
     })
+
+    # Stage 1.5: Numeric Internal Consistency Check
+    internal_contradictions = []
+    if len(num_claims) > 1:
+        consistency_prompt = (
+            "You are an internal consistency checker. Look at the following numeric claims extracted from a single document. "
+            "Check if any two claims about the SAME entity disagree with each other (e.g., 'AWS has 32%' vs 'AWS market share is 29%'). "
+            "Output any disagreements found in the 'contradictions' list. If none, return an empty list."
+        )
+        consistency_msg = [
+            {"role": "system", "content": consistency_prompt},
+            {"role": "user", "content": f"Numeric claims:\n{chr(10).join(num_claims)}"}
+        ]
+        try:
+            consistency_result: NumericConsistencyOutput = call_agent_structured(
+                router=router,
+                agent_name="fact_checker",
+                messages=consistency_msg,
+                schema=NumericConsistencyOutput
+            )
+            internal_contradictions = consistency_result.contradictions
+        except Exception as e:
+            logger.error(f"Failed numeric consistency check: {e}")
 
     # Stage 2: Verify Claims via Web Search
     logger.info(f"Verifying {len(claims)} claims...")
@@ -103,12 +119,18 @@ def fact_checker_node(state: dict) -> dict:
     
     for i, claim in enumerate(claims, 1):
         try:
-            # Query the web for each claim
             result = web_search(query=claim)
             search_results_context.append(f"Claim {i}: {claim}\nSearch Result: {result}\n")
         except Exception as e:
             logger.error(f"Web search failed for claim: {claim}. Error: {e}")
             search_results_context.append(f"Claim {i}: {claim}\nSearch Result: [Search Failed: {e}]\n")
+
+    if internal_contradictions:
+        search_results_context.append(
+            "\nCRITICAL INTERNAL CONTRADICTIONS DETECTED IN NUMERIC CLAIMS:\n" + 
+            "\n".join(f"- {c}" for c in internal_contradictions) +
+            "\nThese internal contradictions MUST be marked as 'contradicted' in the final output."
+        )
 
     # Stage 3: Classify Claims
     eval_prompt = (
