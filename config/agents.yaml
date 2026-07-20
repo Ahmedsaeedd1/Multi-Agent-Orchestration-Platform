@@ -5,104 +5,150 @@
 # NOTE: model swaps below address capability gaps only. Wiring bugs (route_specialist
 # blindness, orchestrator fast-path, cache contamination) are separate and are NOT
 # fixed by any model change — see the earlier bug-fix prompt for those.
+#
+# HF CREDIT EXHAUSTION (confirmed): HuggingFace Inference Providers account has
+# depleted its monthly included credits — every HF-routed call returns
+# 402 "You have depleted your monthly included credits." This was previously
+# hidden behind misleading 401s in some code paths; the direct API call
+# confirmed the real status is 402. All HF-primary agents below have been
+# swapped to Groq/Z.ai primaries until credits refresh or are topped up.
+# HF entries are kept as fallback (not deleted) so they resume automatically
+# once billing is resolved — check huggingface.co/settings/billing for reset date.
+#
+# KIMI-K2.7-CODE: separately from the credit issue, this model is NOT YET
+# routable through router.huggingface.co at all (confirmed via HuggingFace's
+# own InferenceSupport request thread — no provider has been wired up for it
+# yet, regardless of billing state). Do not use it as primary or fallback
+# until that changes.
 
 orchestrator:
-  primary:   { provider: groq,         model: llama-3.3-70b-versatile }
+  primary: { provider: groq, model: llama-3.3-70b-versatile }
   fallback:
-    - { provider: openrouter,  model: google/gemma-4-26b-a4b-it:free }
-    - { provider: zai,         model: glm-4.7-flash }
+    - { provider: openrouter, model: google/gemma-4-26b-a4b-it:free }
+    - { provider: zai, model: glm-4.7-flash }
   temperature: 0.2
 
 planner:
-  primary:   { provider: huggingface,  model: deepseek-ai/DeepSeek-R1:novita }
+  primary: { provider: groq, model: llama-3.3-70b-versatile }
   fallback:
-    - { provider: groq,        model: llama-3.3-70b-versatile }
-    - { provider: zai,         model: glm-4.7-flash }
+    - { provider: huggingface, model: deepseek-ai/DeepSeek-R1:novita }
+    - { provider: zai, model: glm-4.7-flash }
   temperature: 0.3
-  # Unchanged. If planner is genuinely producing bad orderings after the
-  # wiring fixes land, log plan_reasoning for 5 real runs before swapping —
-  # R1 is a strong reasoning model, unlikely to be the actual bottleneck here.
+  # Primary swapped from HF to Groq — HF account has exhausted monthly
+  # credits (402). HF R1 kept as fallback, will resume once credits refresh.
+  # Original note still applies once HF is restored: R1 is a strong reasoning
+  # model, unlikely to be the actual bottleneck for planning quality — don't
+  # swap it further without logging plan_reasoning from real runs first.
 
 researcher:
-  primary:   { provider: groq,         model: llama-3.1-8b-instant }
+  primary: { provider: groq, model: llama-3.1-8b-instant }
   fallback:
-    - { provider: openrouter,  model: google/gemma-4-26b-a4b-it:free }
-    - { provider: zai,         model: glm-4.7-flash }
+    - { provider: openrouter, model: google/gemma-4-26b-a4b-it:free }
+    - { provider: zai, model: glm-4.7-flash }
   temperature: 0.4
   tools: [web_search, web_fetch, memory_write]
 
 fact_checker:
-  primary:   { provider: huggingface,  model: deepseek-ai/DeepSeek-R1:novita }
+  primary: { provider: groq, model: llama-3.3-70b-versatile }
   fallback:
-    - { provider: groq, model: llama-3.3-70b-versatile }
-    - { provider: zai,  model: glm-4.7-flash }
+    - { provider: huggingface, model: deepseek-ai/DeepSeek-R1:novita }
+    - { provider: zai, model: glm-4.7-flash }
   temperature: 0.1
   max_tokens: 3072
   tools: [web_search, memory_read]
+  # Primary swapped from HF to Groq — HF account credit-exhausted (402).
 
 coder:
-  primary:   { provider: huggingface,  model: moonshotai/Kimi-K2.7-Code:Together AI }
+  primary: { provider: groq, model: llama-3.3-70b-versatile }
   fallback:
     - { provider: huggingface, model: zai-org/GLM-5.2:novita }
-    - { provider: groq,        model: llama-3.3-70b-versatile }
+    - { provider: zai, model: glm-4.7-flash }
   temperature: 0.1
   max_tokens: 4096
   tools: [run_python, read_file, write_file, memory_write]
-  # Changed from GLM-5.2 to Kimi-K2.7-Code — it's a coding-specialist model,
-  # a better fit than a general-purpose model for this specific role.
-  # GLM-5.2 demoted to fallback rather than dropped, since it's still a
-  # capable general model if Kimi fails.
+  # Kimi-K2.7-Code REMOVED entirely — confirmed via HuggingFace's own
+  # InferenceSupport thread that no provider is wired up for this model yet;
+  # every call 401s regardless of token/billing state. Do not re-add until
+  # that changes (check huggingface.co/spaces/huggingface/InferenceSupport
+  # for this model's status).
+  # Also: the ":Together AI" suffix in the old primary was invalid syntax —
+  # provider suffixes must be a lowercase single-word slug (e.g. "novita",
+  # "together", "fireworks-ai"), never a capitalized display name with a space.
+  # Primary swapped to Groq — HF account credit-exhausted (402) separately
+  # from the Kimi routing issue. GLM-5.2:novita kept as fallback since it was
+  # previously confirmed working before credits ran out.
 
 code_evaluator:
-  primary:   { provider: huggingface,  model: zai-org/GLM-5.2:Together AI }
+  primary: { provider: groq, model: llama-3.3-70b-versatile }
   fallback:
-    - { provider: groq,        model: llama-3.3-70b-versatile }
-    - { provider: zai,         model: glm-4.7-flash }
+    - { provider: huggingface, model: zai-org/GLM-5.2:novita }
+    - { provider: zai, model: glm-4.7-flash }
   temperature: 0.1
   max_tokens: 2048
   tools: [run_static_analysis, run_sandboxed_with_edge_cases, memory_read]
-  # Left as GLM-5.2 deliberately — do not also swap this to Kimi in the same
-  # pass as the coder change, or you won't know which swap caused any
-  # change in behavior. Test coder's swap alone first.
-
+  # Primary swapped to Groq — HF account credit-exhausted (402).
+  # Also fixed: old entry used ":Together AI" as a provider suffix, which is
+  # invalid (capitalized, contains a space). Corrected to ":novita", matching
+  # the same GLM-5.2 string already confirmed working elsewhere in this file.
+  # Do not swap this to Kimi or any other model in the same pass as coder's
+  # fix — keep changes isolated so behavior changes stay attributable.
 
 reviewer:
-  primary:   { provider: groq,         model: llama-3.3-70b-versatile }
+  primary: { provider: groq, model: llama-3.3-70b-versatile }
   fallback:
-    - { provider: openrouter,  model: google/gemma-4-26b-a4b-it:free }
-    - { provider: zai,         model: glm-4.7-flash }
+    - { provider: openrouter, model: google/gemma-4-26b-a4b-it:free }
+    - { provider: zai, model: glm-4.7-flash }
   temperature: 0.0
   tools: [memory_read]
 
 aggregator:
-  primary:   { provider: huggingface,  model: zai-org/GLM-5.2:novita }
+  primary: { provider: groq, model: llama-3.3-70b-versatile }
   fallback:
-    - { provider: groq,        model: llama-3.3-70b-versatile }
-    - { provider: openrouter,  model: google/gemma-4-26b-a4b-it:free }
-    - { provider: zai,         model: glm-4.7-flash }
+    - { provider: huggingface, model: zai-org/GLM-5.2:novita }
+    - { provider: openrouter, model: google/gemma-4-26b-a4b-it:free }
+    - { provider: zai, model: glm-4.7-flash }
   temperature: 0.2
   max_tokens: 4096
   tools: [memory_read]
-  # Changed from llama-3.1-8b-instant to GLM-5.2, and dropped temperature
-  # from 0.3 to 0.2. This is your highest-stakes text-generation role —
-  # it follows a long, strict system prompt (formatting rules, hedging
-  # rules, verbatim-code rules) and produces the final user-facing output.
-  # An 8B fast model is the wrong tradeoff here; correctness matters more
-  # than latency for the very last step in the pipeline.
+  # Primary swapped from GLM-5.2 to Groq llama-3.3-70b — HF account
+  # credit-exhausted (402). GLM-5.2 kept as first fallback so it resumes
+  # automatically once credits refresh; Groq 70B is a reasonable interim
+  # primary for this role given it's the same model class already proven
+  # reliable as orchestrator/reviewer's primary. Temperature stays at 0.2 —
+  # this is still the highest-stakes text-generation role (long, strict
+  # system prompt with formatting/hedging/verbatim-code rules), so
+  # correctness over latency remains the right tradeoff regardless of
+  # which model is primary.
 
 data_analyst:
-  primary:   { provider: huggingface, model: deepseek-ai/DeepSeek-V4-Flash:Fireworks }
+  primary: { provider: groq, model: llama-3.1-8b-instant }
   fallback:
-    - { provider: groq, model: llama-3.1-8b-instant }
-    - { provider: zai,  model: glm-4.7-flash }
+    - {
+        provider: huggingface,
+        model: deepseek-ai/DeepSeek-V4-Flash:fireworks-ai,
+      }
+    - { provider: zai, model: glm-4.7-flash }
   temperature: 0.2
   tools: [run_python, read_file, memory_write]
+  # Primary swapped to Groq — HF account credit-exhausted (402).
+  # Also fixed: old entry used ":Fireworks" (capitalized) as the provider
+  # suffix — invalid syntax, must be lowercase "fireworks-ai". This
+  # combination has NOT been confirmed working yet even independent of the
+  # credit issue — verify with scripts/verify_new_models.py once credits
+  # are restored, before relying on it as anything more than a fallback.
 
 sql_assistant:
-  primary:   { provider: huggingface, model: deepseek-ai/DeepSeek-V4-Flash:Fireworks }
+  primary: { provider: groq, model: llama-3.3-70b-versatile }
   fallback:
-    - { provider: groq, model: llama-3.3-70b-versatile }
-    - { provider: zai,  model: glm-4.7-flash }
+    - {
+        provider: huggingface,
+        model: deepseek-ai/DeepSeek-V4-Flash:fireworks-ai,
+      }
+    - { provider: zai, model: glm-4.7-flash }
   temperature: 0.1
   max_tokens: 2048
   tools: [get_schema, execute_sql, memory_read, memory_write]
+  # Primary swapped to Groq — HF account credit-exhausted (402).
+  # Also fixed: old entry used ":Fireworks" (capitalized) — invalid syntax,
+  # corrected to lowercase "fireworks-ai". Same unverified-combination
+  # caveat as data_analyst above applies here.

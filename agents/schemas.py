@@ -15,7 +15,6 @@ class OrchestratorOutput(BaseModel):
     subtasks: list[str]               # concrete subtasks to delegate
     assignments: dict[str, str]       # subtask -> agent_name
     reasoning: str = ""              # why this decomposition (optional)
-    max_review_cycles: int = 3
 
 
 class PlannerOutput(BaseModel):

@@ -21,7 +21,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class AgentState(TypedDict, total=False):
-    """Minimal state for the orchestrator node.  Extended in graph.py."""
+    """
+    LOCAL TYPE-HINTING ALIAS ONLY. 
+    This is an incomplete local definition to keep typecheckers happy in this file. 
+    The authoritative AgentState with all fields (including sql_output, _assignments) 
+    is defined centrally in graph.py. Do NOT add new fields here expecting them 
+    to be available at runtime.
+    """
     task: str
     subtasks: list[str]
     assignments: dict[str, str]       # subtask index -> agent name

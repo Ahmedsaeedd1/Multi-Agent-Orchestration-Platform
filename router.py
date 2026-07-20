@@ -137,7 +137,8 @@ class ModelRouter:
     """
 
     def __init__(self, config_path: str = "config/agents.yaml"):
-        config_full_path = os.path.join(os.path.dirname(__file__), config_path)
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        config_full_path = os.path.join(base_dir, config_path)
         with open(config_full_path) as f:
             self.config = yaml.safe_load(f)
 
@@ -233,4 +234,10 @@ class ModelRouter:
                 f"All providers failed for agent '{agent}': {last_error}"
             )
 
-        return _cache.get_cached_or_call(agent_name, messages, _do_call)
+        return _cache.get_cached_or_call(
+            agent_name, 
+            messages, 
+            _do_call, 
+            temperature=temperature, 
+            max_tokens=max_tokens
+        )

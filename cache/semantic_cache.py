@@ -59,13 +59,14 @@ class SemanticCache:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def cache_key(agent_name: str, messages: list) -> str:
+    def cache_key(agent_name: str, messages: list, **kwargs) -> str:
         """
-        Constructs a cache key using the agent name and the full task text
+        Constructs a cache key using the agent name, kwargs, and the full task text
         to prevent collision issues from hashing or truncation.
         """
         last_content = messages[-1]["content"] if messages else ""
-        return f"cache:exact:{agent_name}:{last_content}"
+        kwargs_str = json.dumps(kwargs, sort_keys=True) if kwargs else "{}"
+        return f"cache:exact:{agent_name}:{kwargs_str}:{last_content}"
 
     # ------------------------------------------------------------------
     # Core orchestrator
@@ -76,6 +77,7 @@ class SemanticCache:
         agent_name: str,
         messages: list,
         call_fn: Callable,
+        **kwargs,
     ) -> str:
         """
         Return a cached response (str) if available, otherwise call
@@ -99,7 +101,7 @@ class SemanticCache:
         last_content = messages[-1]["content"] if messages else ""
 
         # ── Layer 1: exact match ──────────────────────────────────────
-        key = self.cache_key(agent_name, messages)
+        key = self.cache_key(agent_name, messages, **kwargs)
         try:
             cached = self.redis.read(key)
             if cached is not None:
